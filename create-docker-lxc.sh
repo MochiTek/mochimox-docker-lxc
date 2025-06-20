@@ -3,7 +3,15 @@
 # === Ask for settings ===
 read -p "Container ID (e.g. 200): " CTID
 read -p "Hostname (e.g. mochixxx): " HOSTNAME
-read -sp "Root password: " PASSWORD && echo
+while true; do
+    read -sp "Enter root password: " PASSWORD && echo
+    read -sp "Confirm root password: " PASSWORD_CONFIRM && echo
+    if [ "$PASSWORD" = "$PASSWORD_CONFIRM" ]; then
+        break
+    else
+        echo "❌ Passwords do not match. Please try again."
+    fi
+done
 read -p "Static IP address (e.g. 192.168.0.110): " IP
 read -p "Gateway (e.g. 192.168.0.1): " GATEWAY
 read -p "Bridge (default: vmbr0): " BRIDGE
