@@ -20,8 +20,18 @@ read -p "Static IP address (e.g. 192.168.0.110): " IP
 read -p "Gateway (e.g. 192.168.0.1): " GATEWAY
 read -p "Bridge (default: vmbr0): " BRIDGE
 BRIDGE=${BRIDGE:-vmbr0}
-read -p "Storage (default: local-lvm): " STORAGE
-STORAGE=${STORAGE:-local-lvm}
+echo "Storage backend:"
+echo "  1) local-lvm"
+echo "  2) local-zfs"
+read -p "Choose storage [1-2] (default: 1): " STORAGE_CHOICE
+case "${STORAGE_CHOICE:-1}" in
+  1) STORAGE="local-lvm" ;;
+  2) STORAGE="local-zfs" ;;
+  *)
+    echo "❌ Invalid storage choice. Please choose 1 or 2." >&2
+    exit 1
+    ;;
+esac
 read -p "Disk size in GB (default: 8): " DISK_SIZE
 DISK_SIZE=${DISK_SIZE:-8}
 read -p "RAM in MB (default: 1024): " RAM_MB
@@ -35,6 +45,11 @@ TEMPLATE_DIR="/var/lib/vz/template/cache"
 TEMPLATE_PATH="$TEMPLATE_DIR/$TEMPLATE"
 
 echo -e "\n🚀 Creating Docker-ready LXC container $CTID..."
+
+if ! pvesm status | awk 'NR > 1 {print $1}' | grep -Fxq "$STORAGE"; then
+  echo "❌ Storage '$STORAGE' is not available on this Proxmox host." >&2
+  exit 1
+fi
 
 # Download template if missing
 if [ ! -f "$TEMPLATE_PATH" ]; then
