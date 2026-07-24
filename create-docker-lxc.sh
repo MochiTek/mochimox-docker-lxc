@@ -83,4 +83,4 @@ systemctl start docker
 docker run hello-world || exit 1
 EOF
 
-echo -e "\n✅ Docker is ready in container $CTID!"l
+echo -e "\n✅ Docker is ready in container $CTID!"
