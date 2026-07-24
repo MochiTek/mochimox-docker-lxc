@@ -40,11 +40,25 @@ read -p "Swap in MB (default: 512): " SWAP_MB
 SWAP_MB=${SWAP_MB:-512}
 read -p "CPU cores (default: 2): " CORES
 CORES=${CORES:-2}
-TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
+TEMPLATE=""
 TEMPLATE_DIR="/var/lib/vz/template/cache"
+TEMPLATE_FALLBACK="debian-12-standard_12.7-1_amd64.tar.zst"
+
+if command -v pveam >/dev/null 2>&1; then
+  pveam update >/dev/null 2>&1 || true
+  TEMPLATE=$(pveam available --section system 2>/dev/null | \
+    grep -Eo 'debian-12-standard_[^[:space:]]+_amd64\.tar\.zst' | \
+    sort -V | tail -n1 || true)
+fi
+
+if [ -z "$TEMPLATE" ]; then
+  TEMPLATE="$TEMPLATE_FALLBACK"
+fi
+
 TEMPLATE_PATH="$TEMPLATE_DIR/$TEMPLATE"
 
 echo -e "\n🚀 Creating Docker-ready LXC container $CTID..."
+echo "📦 Using template: $TEMPLATE"
 
 if ! pvesm status | awk 'NR > 1 {print $1}' | grep -Fxq "$STORAGE"; then
   echo "❌ Storage '$STORAGE' is not available on this Proxmox host." >&2
@@ -54,11 +68,28 @@ fi
 # Download template if missing
 if [ ! -f "$TEMPLATE_PATH" ]; then
   echo "⬇️  Downloading Debian 12 template..."
-  if command -v wget >/dev/null 2>&1; then
-    wget -q "https://downloads.proxmox.com/images/system/$TEMPLATE" -O "$TEMPLATE_PATH"
-  else
-    curl -fsSL "https://downloads.proxmox.com/images/system/$TEMPLATE" -o "$TEMPLATE_PATH"
+  if command -v pveam >/dev/null 2>&1; then
+    pveam download local "$TEMPLATE" >/dev/null 2>&1 || true
   fi
+
+  if [ ! -f "$TEMPLATE_PATH" ]; then
+    if command -v wget >/dev/null 2>&1; then
+      wget "https://download.proxmox.com/images/system/$TEMPLATE" -O "$TEMPLATE_PATH"
+    else
+      curl -fSL "https://download.proxmox.com/images/system/$TEMPLATE" -o "$TEMPLATE_PATH"
+    fi
+  fi
+fi
+
+# Verify template archive integrity before use.
+if command -v zstd >/dev/null 2>&1; then
+  if ! zstd -t "$TEMPLATE_PATH" >/dev/null 2>&1; then
+    echo "❌ Template archive appears corrupted: $TEMPLATE_PATH" >&2
+    echo "   Delete the file and rerun the script to download it again." >&2
+    exit 1
+  fi
+else
+  echo "⚠️  'zstd' is not available, skipping template integrity check."
 fi
 
 # Create LXC
