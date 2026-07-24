@@ -28,7 +28,7 @@ case "${STORAGE_CHOICE:-1}" in
   1) STORAGE="local-lvm" ;;
   2) STORAGE="local-zfs" ;;
   *)
-    echo "❌ Invalid storage choice. Please  choose 1 or 2." >&2
+    echo "❌ Invalid storage choice. Please choose 1 or 2." >&2
     exit 1
     ;;
 esac
