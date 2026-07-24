@@ -1,5 +1,9 @@
 #!/bin/bash
 
+set -euo pipefail
+
+trap 'echo "❌ Error on line $LINENO. Aborting." >&2' ERR
+
 # === Ask for settings ===
 read -p "Container ID (e.g. 200): " CTID
 read -p "Hostname (e.g. mochixxx): " HOSTNAME
@@ -16,6 +20,8 @@ read -p "Static IP address (e.g. 192.168.0.110): " IP
 read -p "Gateway (e.g. 192.168.0.1): " GATEWAY
 read -p "Bridge (default: vmbr0): " BRIDGE
 BRIDGE=${BRIDGE:-vmbr0}
+read -p "Storage (default: local-lvm): " STORAGE
+STORAGE=${STORAGE:-local-lvm}
 read -p "Disk size in GB (default: 8): " DISK_SIZE
 DISK_SIZE=${DISK_SIZE:-8}
 read -p "RAM in MB (default: 1024): " RAM_MB
@@ -25,40 +31,63 @@ SWAP_MB=${SWAP_MB:-512}
 read -p "CPU cores (default: 2): " CORES
 CORES=${CORES:-2}
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
+TEMPLATE_DIR="/var/lib/vz/template/cache"
+TEMPLATE_PATH="$TEMPLATE_DIR/$TEMPLATE"
 
 echo -e "\n🚀 Creating Docker-ready LXC container $CTID..."
 
 # Download template if missing
-if [ ! -f "/var/lib/vz/template/cache/$TEMPLATE" ]; then
+if [ ! -f "$TEMPLATE_PATH" ]; then
   echo "⬇️  Downloading Debian 12 template..."
-  wget -q https://downloads.proxmox.com/images/system/$TEMPLATE -O /var/lib/vz/template/cache/$TEMPLATE
+  if command -v wget >/dev/null 2>&1; then
+    wget -q "https://downloads.proxmox.com/images/system/$TEMPLATE" -O "$TEMPLATE_PATH"
+  else
+    curl -fsSL "https://downloads.proxmox.com/images/system/$TEMPLATE" -o "$TEMPLATE_PATH"
+  fi
 fi
 
 # Create LXC
-pct create $CTID /var/lib/vz/template/cache/$TEMPLATE \
-  --hostname $HOSTNAME \
-  --password $PASSWORD \
-  --rootfs local-lvm:${DISK_SIZE} \
-  --storage local-lvm \
-  --memory $RAM_MB \
-  --swap $SWAP_MB \
-  --cores $CORES \
-  --net0 name=eth0,bridge=$BRIDGE,ip=$IP/24,gw=$GATEWAY \
+pct create "$CTID" "$TEMPLATE_PATH" \
+  --hostname "$HOSTNAME" \
+  --password "$PASSWORD" \
+  --rootfs "${STORAGE}:${DISK_SIZE}" \
+  --storage "$STORAGE" \
+  --memory "$RAM_MB" \
+  --swap "$SWAP_MB" \
+  --cores "$CORES" \
+  --net0 "name=eth0,bridge=$BRIDGE,ip=$IP/24,gw=$GATEWAY" \
   --features nesting=1,keyctl=1 \
   --unprivileged 0 \
   --ostype debian \
   --arch amd64
 
 # Apply Docker-compatible config
-cat <<EOF >> /etc/pve/lxc/${CTID}.conf
+if [ ! -f "/etc/pve/lxc/${CTID}.conf" ]; then
+  echo "❌ Container config was not created. Aborting." >&2
+  exit 1
+fi
+
+cat <<EOF >> "/etc/pve/lxc/${CTID}.conf"
 lxc.apparmor.profile: unconfined
 lxc.cgroup.devices.allow: a
 lxc.cap.drop:
 EOF
 
 # Start and wait
-pct start $CTID
-sleep 5
+pct start "$CTID"
+
+echo "⏳ Waiting for container to become ready..."
+for _ in {1..30}; do
+  if pct exec "$CTID" -- true >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+if ! pct exec "$CTID" -- true >/dev/null 2>&1; then
+  echo "❌ Container did not become ready in time." >&2
+  exit 1
+fi
 
 # === Install Docker ===
 echo "🐳 Installing Docker inside container..."
