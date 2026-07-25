@@ -108,16 +108,19 @@ pct create "$CTID" "$TEMPLATE_PATH" \
   --arch amd64
 
 # Apply Docker-compatible config
-if [ ! -f "/etc/pve/lxc/${CTID}.conf" ]; then
+CONF_PATH="/etc/pve/lxc/${CTID}.conf"
+
+if [ ! -f "$CONF_PATH" ]; then
   echo "❌ Container config was not created. Aborting." >&2
   exit 1
 fi
 
-cat <<EOF >> "/etc/pve/lxc/${CTID}.conf"
-lxc.apparmor.profile: unconfined
-lxc.cgroup.devices.allow: a
-lxc.cap.drop:
-EOF
+# Remove deprecated cgroup v1 key to avoid future Proxmox hard errors.
+sed -i '/^lxc\.cgroup\.devices\.allow:/d' "$CONF_PATH"
+
+# Add required Docker-in-LXC settings only if they are not already present.
+grep -qxF 'lxc.apparmor.profile: unconfined' "$CONF_PATH" || echo 'lxc.apparmor.profile: unconfined' >> "$CONF_PATH"
+grep -qxF 'lxc.cap.drop:' "$CONF_PATH" || echo 'lxc.cap.drop:' >> "$CONF_PATH"
 
 # Start and wait
 pct start "$CTID"
