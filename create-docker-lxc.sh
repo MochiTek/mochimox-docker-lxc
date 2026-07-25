@@ -40,6 +40,46 @@ read -p "Swap in MB (default: 512): " SWAP_MB
 SWAP_MB=${SWAP_MB:-512}
 read -p "CPU cores (default: 2): " CORES
 CORES=${CORES:-2}
+
+CREATE_SUDO_USER="n"
+SUDO_USERNAME=""
+SUDO_USER_PASSWORD=""
+read -p "Create a non-root admin user with passwordless sudo? [y/N]: " CREATE_SUDO_USER
+CREATE_SUDO_USER=${CREATE_SUDO_USER,,}
+
+if [[ "$CREATE_SUDO_USER" =~ ^y(es)?$ ]]; then
+  while true; do
+    read -p "New admin username: " SUDO_USERNAME
+    if [[ -z "$SUDO_USERNAME" ]]; then
+      echo "❌ Username cannot be empty."
+      continue
+    fi
+    if [[ ! "$SUDO_USERNAME" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]; then
+      echo "❌ Invalid username format. Use lowercase letters, numbers, '_' or '-' and start with a letter or '_'."
+      continue
+    fi
+    break
+  done
+
+  while true; do
+    read -sp "Password for '$SUDO_USERNAME': " SUDO_USER_PASSWORD && echo
+    read -sp "Confirm password for '$SUDO_USERNAME': " SUDO_USER_PASSWORD_CONFIRM && echo
+    if [[ "$SUDO_USER_PASSWORD" != "$SUDO_USER_PASSWORD_CONFIRM" ]]; then
+      echo "❌ Passwords do not match. Please try again."
+      continue
+    fi
+    if [[ -z "$SUDO_USER_PASSWORD" ]]; then
+      echo "❌ Password cannot be empty."
+      continue
+    fi
+    if [[ "$SUDO_USER_PASSWORD" == *:* ]]; then
+      echo "❌ Password cannot contain ':' because of Linux chpasswd format."
+      continue
+    fi
+    break
+  done
+fi
+
 TEMPLATE=""
 TEMPLATE_DIR="/var/lib/vz/template/cache"
 TEMPLATE_FALLBACK="debian-12-standard_12.7-1_amd64.tar.zst"
@@ -160,5 +200,29 @@ systemctl start docker
 # Test Docker
 docker run hello-world || exit 1
 EOF
+
+if [[ "$CREATE_SUDO_USER" =~ ^y(es)?$ ]]; then
+  echo "👤 Creating admin user '$SUDO_USERNAME' inside container..."
+  pct exec "$CTID" -- bash -s -- "$SUDO_USERNAME" <<'EOF'
+USERNAME="$1"
+
+if ! command -v sudo >/dev/null 2>&1; then
+  apt update
+  apt install -y sudo
+fi
+
+if ! id -u "$USERNAME" >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$USERNAME"
+fi
+
+usermod -aG sudo "$USERNAME"
+echo "$USERNAME ALL=(ALL:ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-${USERNAME}-nopasswd"
+chmod 440 "/etc/sudoers.d/90-${USERNAME}-nopasswd"
+EOF
+
+  printf '%s:%s\n' "$SUDO_USERNAME" "$SUDO_USER_PASSWORD" | pct exec "$CTID" -- chpasswd
+  unset SUDO_USER_PASSWORD
+  echo "✅ Admin user '$SUDO_USERNAME' created with passwordless sudo."
+fi
 
 echo -e "\n✅ Docker is ready in container $CTID!"
