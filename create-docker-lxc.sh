@@ -17,7 +17,8 @@ while true; do
     fi
 done
 read -p "Static IP address (e.g. 192.168.0.110): " IP
-read -p "Gateway (e.g. 192.168.0.1): " GATEWAY
+read -p "Gateway (default: 192.168.0.1): " GATEWAY
+GATEWAY=${GATEWAY:-192.168.0.1}
 read -p "DNS server (default: 1.1.1.1): " DNS_SERVER
 DNS_SERVER=${DNS_SERVER:-1.1.1.1}
 read -p "Bridge (default: vmbr0): " BRIDGE
