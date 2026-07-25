@@ -18,6 +18,8 @@ while true; do
 done
 read -p "Static IP address (e.g. 192.168.0.110): " IP
 read -p "Gateway (e.g. 192.168.0.1): " GATEWAY
+read -p "DNS server (default: 1.1.1.1): " DNS_SERVER
+DNS_SERVER=${DNS_SERVER:-1.1.1.1}
 read -p "Bridge (default: vmbr0): " BRIDGE
 BRIDGE=${BRIDGE:-vmbr0}
 echo "Storage backend:"
@@ -141,6 +143,7 @@ pct create "$CTID" "$TEMPLATE_PATH" \
   --memory "$RAM_MB" \
   --swap "$SWAP_MB" \
   --cores "$CORES" \
+  --nameserver "$DNS_SERVER" \
   --net0 "name=eth0,bridge=$BRIDGE,ip=$IP/24,gw=$GATEWAY" \
   --features nesting=1,keyctl=1 \
   --unprivileged 0 \
